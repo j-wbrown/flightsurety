@@ -84,7 +84,6 @@ contract FlightSuretyData {
                                 bool mode
                             ) 
                             external
-                            requireContractOwner 
     {
         operational = mode;
     }
@@ -92,19 +91,6 @@ contract FlightSuretyData {
     /********************************************************************************************/
     /*                                     SMART CONTRACT FUNCTIONS                             */
     /********************************************************************************************/
-
-   /**
-    * @dev Add an airline to the registration queue
-    *      Can only be called from FlightSuretyApp contract
-    *
-    */   
-    function registerAirline
-                            (   
-                            )
-                            external
-                            pure
-    {
-    }
 
 
    /**
@@ -116,6 +102,7 @@ contract FlightSuretyData {
                             )
                             external
                             payable
+                            isOperational
     {
 
     }
@@ -128,6 +115,7 @@ contract FlightSuretyData {
                                 )
                                 external
                                 pure
+                                isOperational
     {
     }
     
@@ -141,6 +129,7 @@ contract FlightSuretyData {
                             )
                             external
                             pure
+                            isOperational
     {
     }
 
@@ -154,20 +143,8 @@ contract FlightSuretyData {
                             )
                             public
                             payable
+                            isOperational
     {
-    }
-
-    function getFlightKey
-                        (
-                            address airline,
-                            string memory flight,
-                            uint256 timestamp
-                        )
-                        pure
-                        internal
-                        returns(bytes32) 
-    {
-        return keccak256(abi.encodePacked(airline, flight, timestamp));
     }
 
     /**
@@ -176,7 +153,8 @@ contract FlightSuretyData {
     */
     function() 
                             external 
-                            payable 
+                            payable
+                            isOperational 
     {
         fund();
     }

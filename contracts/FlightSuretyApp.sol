@@ -25,6 +25,7 @@ contract FlightSuretyApp {
     uint8 private constant STATUS_CODE_LATE_OTHER = 50;
 
     address private contractOwner;          // Account used to deploy contract
+    FlightSuretyData FlightSuretyData;
 
     struct Flight {
         bool isRegistered;
@@ -41,18 +42,6 @@ contract FlightSuretyApp {
 
     // Modifiers help avoid duplication of code. They are typically used to validate something
     // before a function is allowed to be executed.
-
-    /**
-    * @dev Modifier that requires the "operational" boolean variable to be "true"
-    *      This is used on all state changing functions to pause the contract in 
-    *      the event there is an issue that needs to be fixed
-    */
-    modifier requireIsOperational() 
-    {
-         // Modify to call data contract's status
-        require(true, "Contract is currently not operational");  
-        _;  // All modifiers require an "_" which indicates where the function body will be added
-    }
 
     /**
     * @dev Modifier that requires the "ContractOwner" account to be the function caller
@@ -73,23 +62,15 @@ contract FlightSuretyApp {
     */
     constructor
                                 (
+                                    address dataContract
                                 ) 
                                 public 
     {
         contractOwner = msg.sender;
+        FlightSuretyData = FlightSuretyData(dataContract)
+
     }
 
-    /********************************************************************************************/
-    /*                                       UTILITY FUNCTIONS                                  */
-    /********************************************************************************************/
-
-    function isOperational() 
-                            public 
-                            pure 
-                            returns(bool) 
-    {
-        return true;  // Modify to call data contract's status
-    }
 
     /********************************************************************************************/
     /*                                     SMART CONTRACT FUNCTIONS                             */
@@ -333,5 +314,12 @@ contract FlightSuretyApp {
     }
 
 // endregion
-
 }   
+
+contract FlightSuretyDate {
+    function setOperatingStatus(bool mode) external
+    function buy() external
+    function creditInsurees() external
+    function pay() external
+    function fund() external
+}
