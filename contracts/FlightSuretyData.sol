@@ -275,7 +275,7 @@ contract FlightSuretyData {
       }
     }
 
-    require(!isDuplicate, "Caller has already called this function.");
+    require(isDuplicate == false, "Caller has already called this function.");
 
     multiCalls.push(msg.sender);
 
@@ -285,18 +285,12 @@ contract FlightSuretyData {
     }
   }
 
-  /**
-   * @dev Adds address to authorized contracts
-   */
-  function authorizeCaller(address contractAddress) external requireContractOwner {
-    authorizedContracts[contractAddress] = 1;
-  }
-
-  /**
-   * @dev Removes address from authorized contracts
-   */
   function deauthorizeCaller(address contractAddress) external requireContractOwner {
     delete authorizedContracts[contractAddress];
+  }
+
+  function authorizeCaller(address contractAddress) external requireContractOwner {
+    authorizedContracts[contractAddress] = 1;
   }
 
   /********************************************************************************************/
@@ -307,10 +301,8 @@ contract FlightSuretyData {
    * @dev Add an airline to the registration queue
    *      Can only be called from FlightSuretyApp contract
    */
-  function registerAirline(string calldata name, address addr) external requireIsOperational requireIsCallerAuthorized requireValidAddress(addr) returns(bool success) {
-    require(!airlines[addr].isRegistered, "Airline has already been registered");
-
-    bool result = true;
+  function registerAirline(string calldata name, address addr) external requireIsOperational requireIsCallerAuthorized returns(bool success) {
+    require(!airlines[addr].isRegistered, "Flight has registered already");
 
     airlines[addr] = Airline({
       name: name,
@@ -322,13 +314,12 @@ contract FlightSuretyData {
 
     emit AirlineRegistered(name, addr);
 
-    return result;
+    return true;
   }
 
-  /**
-   * @dev Submit funding for airline
-   */   
+
   function fundAirline(address addr) external requireIsOperational requireIsCallerAuthorized {
+    require(airlines[addr].isFunded, "This airline is already funded");
     airlines[addr].isFunded = true;
     emit AirlineFunded(airlines[addr].name, addr);
   }
@@ -338,11 +329,11 @@ contract FlightSuretyData {
    */
   function registerFlight(address airline, string calldata flight, string calldata from, string calldata to, uint256 timestamp) external requireIsOperational requireIsCallerAuthorized requireValidAddress(airline) requireAirlineIsFunded(airline) {
     bytes32 flightKey = getFlightKey(airline, flight, timestamp);
-    require(!flights[flightKey].isRegistered, "Flight has already been registered");
+    require(!flights[flightKey].isRegistered, "Flight has registered already");
 
     flights[flightKey] = Flight({
-      isRegistered: true,
       statusCode: 0,
+      isRegistered: true,
       updatedTimestamp: timestamp,
       airline: airline,
       flight: flight,
@@ -359,10 +350,7 @@ contract FlightSuretyData {
    * @dev Process flights
    */
   function processFlightStatus(address airline, string calldata flight, uint256 timestamp, uint8 statusCode) external requireIsOperational requireIsCallerAuthorized {
-    //require(!this.isLandedFlight(airline, flight, timestamp), "Flight already landed");
-
     bytes32 flightKey = getFlightKey(airline, flight, timestamp);    
-    
     if (flights[flightKey].statusCode == STATUS_CODE_UNKNOWN) {
       flights[flightKey].statusCode = statusCode;
       if(statusCode == STATUS_CODE_LATE_AIRLINE) {
@@ -373,17 +361,15 @@ contract FlightSuretyData {
     emit FlightStatusUpdated(airline, flight, timestamp, statusCode);
   }
 
-  /**
-   * @dev Buy insurance for a flight
-   */   
+
   function buy(address airline, string calldata flight, uint256 timestamp, address passenger, uint256 amount, uint256 multiplier) external requireIsOperational requireIsCallerAuthorized {
     bytes32 flightKey = getFlightKey(airline, flight, timestamp);
 
     insuredPassengersPerFlight[flightKey].push(Insurance({
       passenger: passenger,
       amount: amount,
-      multiplier: multiplier,
-      isCredited: false
+      isCredited: false,
+      multiplier: multiplier
     }));
 
     emit InsuranceBought(airline, flight, timestamp, passenger, amount, multiplier);
@@ -397,12 +383,10 @@ contract FlightSuretyData {
 
     for (uint i = 0; i < insuredPassengersPerFlight[flightKey].length; i++) {
       Insurance memory insurance = insuredPassengersPerFlight[flightKey][i];
-
       if (insurance.isCredited == false) {
-        insurance.isCredited = true;
         uint256 amount = insurance.amount.mul(insurance.multiplier).div(100);
         pendingPayments[insurance.passenger] += amount;
-
+        insurance.isCredited = true;
         emit InsureeCredited(insurance.passenger, amount);
       }
     }
@@ -412,16 +396,12 @@ contract FlightSuretyData {
    * @dev Transfers eligible payout funds to insuree
    */
   function pay(address passenger) external requireIsOperational requireIsCallerAuthorized {
-    // Checks
     require(passenger == tx.origin, "Contracts not allowed");
-    require(pendingPayments[passenger] > 0, "No fund available for withdrawal");
+    require(pendingPayments[passenger] > 0, "Funds unavailable");
 
-    // Effects
     uint256 amount = pendingPayments[passenger];
     pendingPayments[passenger] = 0;
 
-    // Interaction
-    // Cast address to payable address
     address(uint160(passenger)).transfer(amount);
 
     emit AccountWithdrawn(passenger, amount);
