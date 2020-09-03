@@ -7,6 +7,7 @@ import express from 'express';
 
 // Configuration
 let config = Config['localhost'];
+
 let web3 = new Web3(new Web3.providers.WebsocketProvider(config.url.replace('http', 'ws')));
 web3.eth.defaultAccount = web3.eth.accounts[0];
 let flightSuretyApp = new web3.eth.Contract(FlightSuretyApp.abi, config.appAddress);
@@ -39,6 +40,8 @@ function getRandomStatusCode() {
 // Setup application
 web3.eth.getAccounts((error, accounts) => {
   let owner = accounts[0];
+
+  console.log(accounts);
 
   // Authorize FlightSurety app to call FlightSurety data contract
   flightSuretyData.methods.authorizeCaller(config.appAddress).send({from: owner}, (error, result) => {
