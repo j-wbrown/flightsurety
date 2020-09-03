@@ -3,6 +3,8 @@ pragma solidity 0.6.2;
 import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
 
 contract FlightSuretyData {
+
+
   using SafeMath for uint256;
 
   /********************************************************************************************/
@@ -27,31 +29,14 @@ contract FlightSuretyData {
   // Blocks all state changes throughout the contract if false                                    
   bool private operational = true;
 
-  // Multi-party consensus
-  uint constant M = 1;
-  address[] multiConsensusList = new address[](0);
-
   // Restrict data contract callers
   mapping(address => uint256) private authorizedContracts;
-
-  // Flights
-  struct Flight {
-    bool isRegistered;
-    uint8 statusCode; // 0: unknown (in-flight), >0: landed
-    uint256 updatedTimestamp;
-    address airline;
-    string flight;
-    string from;
-    string to;
-  }
-  mapping(bytes32 => Flight) private flights;
-  bytes32[] registeredFlights = new bytes32[](0);
 
   // Insurances
   struct Insurance {
     address passenger;
-    uint256 amount; // Passenger insurance payment
-    uint256 multiplier; // General damages multiplier (1.5x by default)
+    uint256 amount; 
+    uint256 multiplier; 
     bool isCredited;
   }
 
@@ -61,30 +46,43 @@ contract FlightSuretyData {
     bool isFunded;
     bool isRegistered;
   }
+
+  // Flights
+  struct Flight {
+    bool isRegistered;
+    uint8 statusCode; 
+    uint256 updatedTimestamp;
+    address airline;
+    string flight;
+    string from;
+    string to;
+  }
+  mapping(bytes32 => Flight) private flights;
+  bytes32[] registeredFlights = new bytes32[](0);
+
+  // consensus
+  address[] multiConsensusList = new address[](0);
+
+  mapping (address => uint) public pending;
   mapping(address => Airline) private airlines;
-  address[] registeredAirlines = new address[](0);
-  mapping (bytes32 => Insurance[]) insuredPassengersPerFlight;
-  mapping (address => uint) public pendingPayments;
+  mapping (bytes32 => Insurance[]) passengersWithInsurancePerFlight;
+
+  address[] listOfRegisteredAirlines = new address[](0);
 
   /********************************************************************************************/
   /*                                       CONSTRUCTOR                                        */
   /********************************************************************************************/
 
-  /**
-  * @dev Constructor
-  *      The deploying account becomes contractOwner
-  */
   constructor(string memory firstAirlineName, address firstAirlineAddress) public {
     contractOwner = msg.sender;
   
-    // Airline Contract Initialization: First airline is registered when contract is deployed
     airlines[firstAirlineAddress] = Airline({
       name: firstAirlineName,
       isFunded: false, 
       isRegistered: true
     });
 
-    registeredAirlines.push(firstAirlineAddress);
+    listOfRegisteredAirlines.push(firstAirlineAddress);
   }
 
   /********************************************************************************************/
@@ -207,7 +205,7 @@ contract FlightSuretyData {
    * @return An array with the addresses of all registered airlines
    */
   function getRegisteredAirlines() external view returns(address[] memory) {
-    return registeredAirlines;
+    return listOfRegisteredAirlines;
   }
 
   /**
@@ -235,7 +233,8 @@ contract FlightSuretyData {
    * @dev Check if the passenger is registerd for the flight
    */
   function isInsured(address passenger, address airline, string calldata flight, uint256 timestamp) external view returns (bool) {
-    Insurance[] memory insuredPassengers = insuredPassengersPerFlight[getFlightKey(airline, flight, timestamp)];
+    Insurance[] memory insuredPassengers = passengersWithInsurancePerFlight[getFlightKey(airline, flight, timestamp)];
+    
     for(uint i = 0; i < insuredPassengers.length; i++) {
       if (insuredPassengers[i].passenger == passenger) {
         return true;
@@ -245,36 +244,33 @@ contract FlightSuretyData {
   }
 
   /**
-   * @dev Return the pending payment
-   */
-  function getPendingPaymentAmount(address passenger) external view returns (uint256) {
-    return pendingPayments[passenger];
-  }
-
-  /**
    * @dev Sets contract operations on/off
    *
    * When operational mode is disabled, all write transactions except for this one will fail
    */    
   function setOperatingStatus(bool mode) external requireContractOwner {
-    require(mode != operational, "New mode must be different from existing mode");
     bool isDuplicateCall = false;
 
     for(uint i = 0; i < multiConsensusList.length; i++) {
+      
       if (multiConsensusList[i] == msg.sender) {
         isDuplicateCall = true;
         break;
       }
     }
 
-    require(isDuplicateCall == false, "Caller has already called this function.");
+    require(isDuplicateCall == false, "Duplicate");
 
     multiConsensusList.push(msg.sender);
 
-    if (multiConsensusList.length >= M) {
+    if (multiConsensusList.length >= 1) {
       operational = mode;
       multiConsensusList = new address[](0);
     }
+  }
+
+  function getPendingPaymentAmount(address passenger) external view returns (uint256) {
+    return pending[passenger];
   }
 
   function deauthorizeCaller(address contractAddress) external requireContractOwner {
@@ -289,7 +285,7 @@ contract FlightSuretyData {
   /*                                     SMART CONTRACT FUNCTIONS                             */
   /********************************************************************************************/
 
-  function registerAirline(string calldata name, address addr) external requireIsOperational requireIsCallerAuthorized returns(bool success) {
+  function registerAirline(string calldata name, address addr) external requireIsOperational returns(bool success) {
     require(!airlines[addr].isRegistered, "Flight has registered already");
 
     airlines[addr] = Airline({
@@ -298,7 +294,7 @@ contract FlightSuretyData {
       isRegistered: true
     });
 
-    registeredAirlines.push(addr);
+    listOfRegisteredAirlines.push(addr);
 
     emit AirlineRegistered(name, addr);
 
@@ -333,11 +329,11 @@ contract FlightSuretyData {
   function creditInsurees(address airline, string memory flight, uint256 timestamp) internal requireIsOperational {
     bytes32 flightKey = getFlightKey(airline, flight, timestamp);
 
-    for (uint i = 0; i < insuredPassengersPerFlight[flightKey].length; i++) {
-      Insurance memory insurance = insuredPassengersPerFlight[flightKey][i];
+    for (uint i = 0; i < passengersWithInsurancePerFlight[flightKey].length; i++) {
+      Insurance memory insurance = passengersWithInsurancePerFlight[flightKey][i];
       if (insurance.isCredited == false) {
         uint256 amount = insurance.amount.mul(insurance.multiplier).div(100);
-        pendingPayments[insurance.passenger] += amount;
+        pending[insurance.passenger] += amount;
         insurance.isCredited = true;
         emit InsureeCredited(insurance.passenger, amount);
       }
@@ -352,7 +348,7 @@ contract FlightSuretyData {
     require(!flights[key].isRegistered, "Flight has registered already");
 
     flights[key] = Flight({
-      statusCode: 0,
+      statusCode: STATUS_CODE_UNKNOWN,
       isRegistered: true,
       airline: airline,
       flight: flight,
@@ -369,7 +365,7 @@ contract FlightSuretyData {
 function buy(address airline, string calldata flight, uint256 timestamp, 
              address passenger, uint256 amount, uint256 multiplier) external requireIsOperational requireIsCallerAuthorized {
     bytes32 key = getFlightKey(airline, flight, timestamp);
-    insuredPassengersPerFlight[key].push(Insurance({
+    passengersWithInsurancePerFlight[key].push(Insurance({
       passenger: passenger,
       amount: amount,
       isCredited: false,
@@ -384,10 +380,10 @@ function buy(address airline, string calldata flight, uint256 timestamp,
    */
   function pay(address passenger) external requireIsOperational requireIsCallerAuthorized {
     require(passenger == tx.origin, "Contracts not allowed");
-    require(pendingPayments[passenger] > 0, "Funds unavailable");
+    require(pending[passenger] > 0, "Funds unavailable for passenger");
 
-    uint256 amount = pendingPayments[passenger];
-    pendingPayments[passenger] = 0;
+    uint256 amount = pending[passenger];
+    pending[passenger] = 0;
     address payable passengerAddr = address(uint160(passenger));
     
     passengerAddr.transfer(amount);
